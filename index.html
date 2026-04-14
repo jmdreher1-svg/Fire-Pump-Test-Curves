@@ -69,6 +69,12 @@
   summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 6px 0; color: #1f2937; }
   .pass { color: #065f46; font-weight: 700; }
   .fail { color: #b91c1c; font-weight: 700; }
+  td.derived { background: #f9fafb; color: #1f2937; text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; }
+  /* Compact styling for the wide PLD Disengaged table */
+  #pldOffTable th, #pldOffTable td { padding: 2px 3px; font-size: 11px; }
+  #pldOffTable td input { padding: 3px 4px; font-size: 11px; }
+  #pldOnTable th, #pldOnTable td { padding: 3px 4px; font-size: 12px; }
+  .table-scroll { overflow-x: auto; }
 
   /* Print report — single-page landscape letter */
   .print-report { display: none; }
@@ -174,6 +180,11 @@
           </label>
           <span class="legend-note" style="margin-top: 0;">Chart always plots in PSI</span>
         </div>
+        <div class="legend-note" style="margin-bottom: 6px; color: #92400e;">
+          <b>Note:</b> Confirm with the manufacturer that this shop test curve
+          is already corrected to the rated speed (typical). These values are
+          plotted as-entered; no RPM correction is applied on this side.
+        </div>
         <table id="shopTable">
           <thead><tr><th>GPM</th><th id="shopPressureHeader">PSI</th><th></th></tr></thead>
           <tbody></tbody>
@@ -188,10 +199,19 @@
     <details open>
       <summary>Field Test — PLD Disengaged</summary>
       <div class="panel">
-        <table id="pldOffTable">
-          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <div class="legend-note" style="margin-bottom: 6px;">
+          Net PSI = Discharge − Suction. Values are corrected back to Rated RPM via affinity law (Law 1):
+          Q<sub>c</sub> = Q × (N<sub>rated</sub>/N<sub>meas</sub>); H<sub>c</sub> = H × (N<sub>rated</sub>/N<sub>meas</sub>)².
+        </div>
+        <div class="table-scroll">
+          <table id="pldOffTable">
+            <thead><tr>
+              <th>GPM</th><th>Suct PSI</th><th>Disch PSI</th><th>RPM</th>
+              <th>Net PSI</th><th>Corr GPM</th><th>Corr PSI</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
         <div class="btn-row">
           <button onclick="addRow('pldOff')">+ Add Point</button>
         </div>
@@ -202,8 +222,13 @@
     <details open>
       <summary>Field Test — PLD Engaged</summary>
       <div class="panel">
+        <div class="legend-note" style="margin-bottom: 6px;">
+          Net PSI = Discharge − Suction. Not corrected for RPM (plotted as measured).
+        </div>
         <table id="pldOnTable">
-          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
+          <thead><tr>
+            <th>GPM</th><th>Suct PSI</th><th>Disch PSI</th><th>Net PSI</th><th></th>
+          </tr></thead>
           <tbody></tbody>
         </table>
         <div class="btn-row">
@@ -250,14 +275,14 @@ const data = {
     { gpm: '', psi: '' }
   ],
   pldOff: [
-    { gpm: 0, psi: '' },
-    { gpm: '', psi: '' },
-    { gpm: '', psi: '' }
+    { gpm: 0, suction: '', discharge: '', rpm: '' },
+    { gpm: '', suction: '', discharge: '', rpm: '' },
+    { gpm: '', suction: '', discharge: '', rpm: '' }
   ],
   pldOn: [
-    { gpm: 0, psi: '' },
-    { gpm: '', psi: '' },
-    { gpm: '', psi: '' }
+    { gpm: 0, suction: '', discharge: '' },
+    { gpm: '', suction: '', discharge: '' },
+    { gpm: '', suction: '', discharge: '' }
   ]
 };
 
@@ -287,22 +312,71 @@ function renderRated() {
 }
 
 function renderTable(key) {
-  const id = { shop: 'shopTable', pldOff: 'pldOffTable', pldOn: 'pldOnTable' }[key];
-  const tb = document.querySelector('#' + id + ' tbody');
+  if (key === 'shop') return renderShopTable();
+  if (key === 'pldOff') return renderPldOffTable();
+  if (key === 'pldOn') return renderPldOnTable();
+}
+
+function renderShopTable() {
+  const tb = document.querySelector('#shopTable tbody');
   tb.innerHTML = '';
-  data[key].forEach((pt, i) => {
+  data.shop.forEach((pt, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="number" value="${pt.gpm}" step="any" onchange="data['${key}'][${i}].gpm=parseFloat(this.value);redraw()"></td>
-      <td><input type="number" value="${pt.psi}" step="any" onchange="data['${key}'][${i}].psi=parseFloat(this.value);redraw()"></td>
-      <td><button class="danger" onclick="removeRow('${key}',${i})">×</button></td>
+      <td><input type="number" value="${pt.gpm}" step="any" onchange="data.shop[${i}].gpm=this.value===''?'':parseFloat(this.value);redraw()"></td>
+      <td><input type="number" value="${pt.psi}" step="any" onchange="data.shop[${i}].psi=this.value===''?'':parseFloat(this.value);redraw()"></td>
+      <td><button class="danger" onclick="removeRow('shop',${i})">×</button></td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function renderPldOnTable() {
+  const tb = document.querySelector('#pldOnTable tbody');
+  tb.innerHTML = '';
+  data.pldOn.forEach((pt, i) => {
+    const net = computeNet(pt);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" value="${pt.gpm}" step="any" onchange="data.pldOn[${i}].gpm=this.value===''?'':parseFloat(this.value);renderTable('pldOn');redraw()"></td>
+      <td><input type="number" value="${pt.suction ?? ''}" step="any" onchange="data.pldOn[${i}].suction=this.value===''?'':parseFloat(this.value);renderTable('pldOn');redraw()"></td>
+      <td><input type="number" value="${pt.discharge ?? ''}" step="any" onchange="data.pldOn[${i}].discharge=this.value===''?'':parseFloat(this.value);renderTable('pldOn');redraw()"></td>
+      <td class="derived">${net === null ? '—' : net.toFixed(1)}</td>
+      <td><button class="danger" onclick="removeRow('pldOn',${i})">×</button></td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function renderPldOffTable() {
+  const tb = document.querySelector('#pldOffTable tbody');
+  const ratedRpm = parseFloat(document.getElementById('ratedRpm').value);
+  tb.innerHTML = '';
+  data.pldOff.forEach((pt, i) => {
+    const net = computeNet(pt);
+    const corr = correctPldOffPoint(pt, ratedRpm);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" value="${pt.gpm}" step="any" onchange="data.pldOff[${i}].gpm=this.value===''?'':parseFloat(this.value);renderTable('pldOff');redraw()"></td>
+      <td><input type="number" value="${pt.suction ?? ''}" step="any" onchange="data.pldOff[${i}].suction=this.value===''?'':parseFloat(this.value);renderTable('pldOff');redraw()"></td>
+      <td><input type="number" value="${pt.discharge ?? ''}" step="any" onchange="data.pldOff[${i}].discharge=this.value===''?'':parseFloat(this.value);renderTable('pldOff');redraw()"></td>
+      <td><input type="number" value="${pt.rpm ?? ''}" step="any" onchange="data.pldOff[${i}].rpm=this.value===''?'':parseFloat(this.value);renderTable('pldOff');redraw()"></td>
+      <td class="derived">${net === null ? '—' : net.toFixed(1)}</td>
+      <td class="derived">${corr ? corr.gpm.toFixed(0) : '—'}</td>
+      <td class="derived">${corr ? corr.psi.toFixed(1) : '—'}</td>
+      <td><button class="danger" onclick="removeRow('pldOff',${i})">×</button></td>
     `;
     tb.appendChild(tr);
   });
 }
 
 function addRow(key) {
-  data[key].push({ gpm: '', psi: '' });
+  const empty = {
+    shop: { gpm: '', psi: '' },
+    pldOff: { gpm: '', suction: '', discharge: '', rpm: '' },
+    pldOn: { gpm: '', suction: '', discharge: '' }
+  };
+  data[key].push(empty[key]);
   renderTable(key);
 }
 
@@ -310,6 +384,50 @@ function removeRow(key, i) {
   data[key].splice(i, 1);
   renderTable(key);
   redraw();
+}
+
+// Net pump pressure = discharge − suction (suction defaults to 0 if blank).
+// Returns null if discharge is missing/invalid.
+function computeNet(pt) {
+  const d = parseFloat(pt.discharge);
+  if (isNaN(d)) return null;
+  const s = parseFloat(pt.suction);
+  return d - (isNaN(s) ? 0 : s);
+}
+
+// Affinity Law 1 (constant diameter): Q₁/Q₂ = N₁/N₂ ; H₁/H₂ = (N₁/N₂)²
+// Corrects measured GPM/Net-PSI from test RPM back to rated RPM.
+// Returns { gpm, psi } or null if GPM or net PSI is missing.
+// If either RPM is blank, returns the measured (uncorrected) values.
+function correctPldOffPoint(pt, ratedRpm) {
+  const g = parseFloat(pt.gpm);
+  const net = computeNet(pt);
+  if (isNaN(g) || net === null) return null;
+  const meas = parseFloat(pt.rpm);
+  if (!meas || !ratedRpm || isNaN(ratedRpm)) return { gpm: g, psi: net };
+  const ratio = ratedRpm / meas;
+  return { gpm: g * ratio, psi: net * ratio * ratio };
+}
+
+function pldOffCorrectedPoints() {
+  const ratedRpm = parseFloat(document.getElementById('ratedRpm').value);
+  return data.pldOff
+    .map(pt => correctPldOffPoint(pt, ratedRpm))
+    .filter(p => p !== null)
+    .map(p => ({ x: p.gpm, y: p.psi }))
+    .sort((a, b) => a.x - b.x);
+}
+
+function pldOnNetPoints() {
+  return data.pldOn
+    .map(pt => {
+      const g = parseFloat(pt.gpm);
+      const n = computeNet(pt);
+      if (isNaN(g) || n === null) return null;
+      return { x: g, y: n };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.x - b.x);
 }
 
 function toPoints(arr, opts) {
@@ -353,8 +471,8 @@ function initChart() {
       datasets: [
         { label: 'Rated Curve (Nameplate)', data: [], borderColor: '#111827', backgroundColor: '#111827', borderWidth: 3, borderDash: [8,4], pointRadius: 6, pointStyle: 'rectRot', tension: 0.2 },
         { label: "Mfr Shop Test", data: [], borderColor: '#2563eb', backgroundColor: '#2563eb', borderWidth: 2, pointRadius: 5, pointStyle: 'triangle', tension: 0.3 },
-        { label: 'Field Test — PLD Disengaged', data: [], borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 5, pointStyle: 'circle', tension: 0.3 },
-        { label: 'Field Test — PLD Engaged', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 }
+        { label: 'Field Test — PLD Disengaged (corrected to rated RPM)', data: [], borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 5, pointStyle: 'circle', tension: 0.3 },
+        { label: 'Field Test — PLD Engaged (as-measured)', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 }
       ]
     },
     options: {
@@ -381,8 +499,8 @@ function initChart() {
 function redraw() {
   chart.data.datasets[0].data = toPoints(data.rated);
   chart.data.datasets[1].data = toPoints(data.shop, { convertFromFt: data.shopUnit === 'ft' });
-  chart.data.datasets[2].data = toPoints(data.pldOff);
-  chart.data.datasets[3].data = toPoints(data.pldOn);
+  chart.data.datasets[2].data = pldOffCorrectedPoints();
+  chart.data.datasets[3].data = pldOnNetPoints();
   chart.update();
   updateNfpaCheck();
 }
@@ -392,7 +510,7 @@ function updateNfpaCheck() {
   const ratedGpm = parseFloat(document.getElementById('ratedGpm').value) || 0;
   if (!ratedPsi || !ratedGpm) return;
 
-  const off = toPoints(data.pldOff);
+  const off = pldOffCorrectedPoints();
   if (off.length < 2) {
     document.getElementById('nfpaCheck').innerHTML = 'NFPA 20 acceptance: churn ≤ 140% of rated PSI; 150% flow ≥ 65% of rated PSI.';
     return;
@@ -408,9 +526,9 @@ function updateNfpaCheck() {
   const overloadPass = closest.y >= overloadLimit;
 
   document.getElementById('nfpaCheck').innerHTML = `
-    <b>NFPA 20 Field Test Check (PLD Disengaged):</b><br>
+    <b>NFPA 20 Field Test Check (PLD Disengaged, corrected to rated RPM):</b><br>
     Churn: ${churn.y.toFixed(1)} PSI (limit ≤ ${churnLimit.toFixed(1)}) <span class="${churnPass?'pass':'fail'}">${churnPass?'PASS':'FAIL'}</span><br>
-    At ~${closest.x} GPM: ${closest.y.toFixed(1)} PSI (min ${overloadLimit.toFixed(1)} at 150%) <span class="${overloadPass?'pass':'fail'}">${overloadPass?'PASS':'REVIEW'}</span>
+    At ~${closest.x.toFixed(0)} GPM: ${closest.y.toFixed(1)} PSI (min ${overloadLimit.toFixed(1)} at 150%) <span class="${overloadPass?'pass':'fail'}">${overloadPass?'PASS':'REVIEW'}</span>
   `;
 }
 
@@ -450,6 +568,17 @@ function importData(e) {
       if (parsed.data) {
         Object.assign(data, parsed.data);
       }
+      // Migrate legacy pldOff/pldOn rows that stored a single `psi` field
+      // into the new suction/discharge/(rpm) shape. Old `psi` becomes discharge.
+      ['pldOff','pldOn'].forEach(k => {
+        if (!Array.isArray(data[k])) return;
+        data[k] = data[k].map(pt => {
+          if (pt && (pt.discharge !== undefined || pt.suction !== undefined)) return pt;
+          const migrated = { gpm: pt?.gpm ?? '', suction: '', discharge: pt?.psi ?? '' };
+          if (k === 'pldOff') migrated.rpm = '';
+          return migrated;
+        });
+      });
       if (!data.shopUnit) data.shopUnit = 'psi';
       document.getElementById('shopPressureHeader').textContent = data.shopUnit === 'ft' ? 'Ft. Head' : 'PSI';
       const radio = document.querySelector(`input[name="shopUnit"][value="${data.shopUnit}"]`);
@@ -517,6 +646,12 @@ function printChart() { window.print(); }
 // Init
 ['ratedGpm','ratedPsi'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => { buildRatedCurve(); redraw(); });
+});
+// Rated RPM drives the PLD Disengaged affinity-law correction; re-render that
+// table so the "Corr GPM" / "Corr PSI" columns refresh live.
+document.getElementById('ratedRpm').addEventListener('input', () => {
+  renderTable('pldOff');
+  redraw();
 });
 
 buildRatedCurve();
