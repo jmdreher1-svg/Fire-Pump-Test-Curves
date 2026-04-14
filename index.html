@@ -113,9 +113,15 @@
     .print-chart {
       position: relative;
       width: 100%;
-      min-height: 0; /* allow grid row to shrink/fill */
+      height: 5in;
+      overflow: hidden;
     }
-    .print-chart canvas { width: 100% !important; height: 100% !important; }
+    .print-chart img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
     .print-nfpa {
       border: 1px solid #000;
       padding: 6px 10px;
@@ -124,7 +130,45 @@
     }
     .print-nfpa b { color: #000; }
     .no-print { display: none !important; }
+
+    /* Second page: data tables */
+    .print-data-page {
+      display: block !important;
+      page-break-before: always;
+      color: #000;
+      font-size: 10pt;
+    }
+    .print-data-page h1 {
+      font-size: 16pt;
+      margin: 0 0 8px;
+      border-bottom: 2px solid #000;
+      padding-bottom: 4px;
+    }
+    .print-data-page h2 {
+      font-size: 11pt;
+      margin: 10px 0 4px;
+      color: #1f2937;
+    }
+    .print-data-page table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+      font-size: 9.5pt;
+    }
+    .print-data-page th, .print-data-page td {
+      border: 1px solid #666;
+      padding: 3px 6px;
+      text-align: right;
+    }
+    .print-data-page th {
+      background: #e5e7eb !important;
+      text-align: center;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .print-data-page td:first-child, .print-data-page th:first-child { text-align: left; }
   }
+  .print-data-page { display: none; }
 </style>
 </head>
 <body>
@@ -164,6 +208,32 @@
         <thead><tr><th>Point</th><th>GPM</th><th>PSI</th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+
+    <!-- Measurement uncertainty + performance assessment -->
+    <div class="panel">
+      <h2>Measurement Uncertainty</h2>
+      <div class="legend-note" style="margin-bottom: 6px;">
+        Applied to the PLD Disengaged (corrected) curve as a shaded ±band on the chart,
+        and used in the performance assessment below.
+      </div>
+      <div class="row3">
+        <div>
+          <label>Gauge accuracy (% of reading)</label>
+          <input type="number" id="uncGaugePct" value="1" step="0.1" min="0">
+        </div>
+        <div>
+          <label>Reading error (±PSI)</label>
+          <input type="number" id="uncGaugePsi" value="2" step="0.5" min="0">
+        </div>
+        <div>
+          <label>Flow error (±% of flow)</label>
+          <input type="number" id="uncFlowPct" value="2" step="0.5" min="0">
+        </div>
+      </div>
+      <div class="nfpa-box" id="assessmentBox" style="border-left-color: #047857;">
+        Enter PLD Disengaged test points to generate an engineering assessment.
+      </div>
     </div>
 
     <!-- Shop test -->
@@ -222,8 +292,12 @@
     <details open>
       <summary>Field Test — PLD Engaged</summary>
       <div class="panel">
-        <div class="legend-note" style="margin-bottom: 6px;">
-          Net PSI = Discharge − Suction. Not corrected for RPM (plotted as measured).
+        <div class="legend-note" style="margin-bottom: 6px; color: #92400e;">
+          <b>Note:</b> The PLD-Engaged curve should <u>not</u> be compared
+          against the rated curve or the manufacturer's shop test. It is
+          plotted to show where the PLD disengages and how the pump operates
+          with PLD active. No RPM correction is applied — PLD is meant to
+          operate as-is.
         </div>
         <table id="pldOnTable">
           <thead><tr>
@@ -240,10 +314,21 @@
     <div class="panel">
       <div class="btn-row">
         <button onclick="redraw()">Update Chart</button>
+        <label style="display:inline-flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:0;">
+          <input type="checkbox" id="yAxisFromZero" onchange="redraw()"> Y-axis from 0
+        </label>
+        <button onclick="saveTest()">Save</button>
+        <select id="savedTestsSelect" onchange="loadSavedTest(this.value)" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; max-width: 160px;">
+          <option value="">Load saved test…</option>
+        </select>
+        <button class="danger" style="padding: 6px 10px;" onclick="deleteSavedTest()">Delete</button>
+        <button class="secondary" onclick="printChart()">Print / PDF (Landscape)</button>
+      </div>
+      <div class="btn-row" style="margin-top: 6px;">
         <button class="secondary" onclick="exportData()">Export JSON</button>
         <button class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button>
         <input type="file" id="importFile" style="display:none" accept=".json" onchange="importData(event)">
-        <button class="secondary" onclick="printChart()">Print / PDF (Landscape)</button>
+        <span class="legend-note" style="margin-top: 0; align-self: center;">Save = browser storage · Export = file</span>
       </div>
     </div>
   </div>
@@ -253,12 +338,16 @@
   </div>
 </div>
 
-<!-- Print-only one-page landscape report -->
+<!-- Print-only: page 1 = landscape report with chart; page 2 = raw data tables -->
 <div class="print-report" id="printReport">
   <h1 id="printTitle">Fire Pump Performance Test Report</h1>
   <div class="print-meta" id="printMeta"></div>
   <div class="print-chart" id="printChartSlot"></div>
   <div class="print-nfpa" id="printNfpa"></div>
+</div>
+<div class="print-data-page" id="printDataPage">
+  <h1>Test Data<span id="printDataSubtitle" style="font-size: 12pt; font-weight: 400; color: #374151;"></span></h1>
+  <div id="printDataTables"></div>
 </div>
 
 <script>
@@ -430,6 +519,157 @@ function pldOnNetPoints() {
     .sort((a, b) => a.x - b.x);
 }
 
+// ---------- Measurement uncertainty + performance assessment ----------
+function getUncertainty() {
+  return {
+    gaugePct: (parseFloat(document.getElementById('uncGaugePct').value) || 0) / 100,
+    gaugePsi: parseFloat(document.getElementById('uncGaugePsi').value) || 0,
+    flowPct:  (parseFloat(document.getElementById('uncFlowPct').value)  || 0) / 100
+  };
+}
+
+// Worst-case (linear) pressure band around a reading.
+function pressureBand(psi, u) {
+  return Math.abs(psi) * u.gaugePct + u.gaugePsi;
+}
+
+function pldOffBandPoints() {
+  const u = getUncertainty();
+  const pts = pldOffCorrectedPoints();
+  const upper = pts.map(p => ({ x: p.x, y: p.y + pressureBand(p.y, u) }));
+  const lower = pts.map(p => ({ x: p.x, y: Math.max(0, p.y - pressureBand(p.y, u)) }));
+  return { upper, lower };
+}
+
+// Linear interpolation on a sorted array of { x, y }.
+function interpAt(points, x) {
+  if (!points || points.length === 0) return null;
+  if (x <= points[0].x) return points[0].y;
+  if (x >= points[points.length - 1].x) return points[points.length - 1].y;
+  for (let i = 0; i < points.length - 1; i++) {
+    if (x >= points[i].x && x <= points[i + 1].x) {
+      const span = points[i + 1].x - points[i].x || 1;
+      const t = (x - points[i].x) / span;
+      return points[i].y + t * (points[i + 1].y - points[i].y);
+    }
+  }
+  return null;
+}
+
+function buildAssessment() {
+  const ratedGpm = parseFloat(document.getElementById('ratedGpm').value);
+  const ratedPsi = parseFloat(document.getElementById('ratedPsi').value);
+  const off = pldOffCorrectedPoints();
+  const shop = toPoints(data.shop, { convertFromFt: data.shopUnit === 'ft' });
+  const u = getUncertainty();
+
+  if (!ratedGpm || !ratedPsi || off.length < 2) {
+    return { html: 'Enter PLD Disengaged test points (with RPM for correction) to generate an engineering assessment.' };
+  }
+
+  const checkpoints = [
+    { name: 'Churn (0% flow)',    x: 0,              target: ratedPsi * 1.40, kind: 'max' },
+    { name: 'Rated (100% flow)',  x: ratedGpm,       target: ratedPsi,        kind: 'min' },
+    { name: '150% flow',          x: ratedGpm * 1.5, target: ratedPsi * 0.65, kind: 'min' }
+  ];
+
+  const rows = checkpoints.map(cp => {
+    const measured = interpAt(off, cp.x);
+    const shopVal  = shop.length ? interpAt(shop, cp.x) : null;
+    if (measured === null) return { ...cp, verdict: 'n/a' };
+    const band = pressureBand(measured, u);
+    const diff = cp.kind === 'max' ? measured - cp.target : cp.target - measured;
+    // diff > 0 means deficient; diff <= 0 means meets or exceeds.
+    let verdict;
+    if (diff <= 0) verdict = 'PASS';
+    else if (diff <= band) verdict = 'PASS (within gauge accuracy)';
+    else verdict = 'FAIL';
+    return { ...cp, measured, shopVal, band, diff, verdict };
+  });
+
+  const anyFail = rows.some(r => r.verdict === 'FAIL');
+  const anyBand = rows.some(r => r.verdict === 'PASS (within gauge accuracy)');
+  const allExceed = rows.every(r => r.verdict === 'PASS');
+
+  // Shop-curve delta at rated flow (if available)
+  let shopNote = '';
+  if (shop.length >= 2) {
+    const measuredAtRated = interpAt(off, ratedGpm);
+    const shopAtRated     = interpAt(shop, ratedGpm);
+    if (measuredAtRated !== null && shopAtRated !== null) {
+      const d = measuredAtRated - shopAtRated;
+      const band = pressureBand(shopAtRated, u);
+      let phrase;
+      if (d >= 0) phrase = `exceeds the manufacturer's shop curve by ${d.toFixed(1)} PSI`;
+      else if (Math.abs(d) <= band) phrase = `matches the manufacturer's shop curve within gauge accuracy (Δ ${d.toFixed(1)} PSI, band ±${band.toFixed(1)})`;
+      else phrase = `falls below the manufacturer's shop curve by ${Math.abs(d).toFixed(1)} PSI (outside gauge band ±${band.toFixed(1)})`;
+      shopNote = ` At rated flow, the corrected test ${phrase}.`;
+    }
+  }
+
+  // Overall sentence
+  const uncertaintyPhrase =
+    `±${(u.gaugePct * 100).toFixed(1)}% gauge + ±${u.gaugePsi.toFixed(1)} PSI reading` +
+    (u.flowPct ? ` and ±${(u.flowPct * 100).toFixed(1)}% on flow` : '');
+
+  let overall;
+  if (anyFail) {
+    const bad = rows.filter(r => r.verdict === 'FAIL').map(r => r.name).join(', ');
+    overall = `<span class="fail">FAIL —</span> the pump does not meet NFPA 20 acceptance at: ${bad}. Deficiencies exceed the combined measurement uncertainty (${uncertaintyPhrase}).`;
+  } else if (allExceed) {
+    overall = `<span class="pass">PASS —</span> the corrected PLD Disengaged curve meets or exceeds the rated curve at every NFPA 20 checkpoint, outside any measurement-uncertainty allowance.`;
+  } else if (anyBand) {
+    overall = `<span class="pass">PASS (within uncertainty) —</span> the corrected PLD Disengaged curve meets the rated curve when the combined measurement uncertainty (${uncertaintyPhrase}) is applied. Engineering judgement: acceptable.`;
+  } else {
+    overall = `<span class="pass">PASS.</span>`;
+  }
+
+  const fmt = (v, d = 1) => v === null || v === undefined || isNaN(v) ? '—' : v.toFixed(d);
+
+  const rowsHtml = rows.map(r => {
+    if (r.verdict === 'n/a') {
+      return `<tr><td>${r.name}</td><td colspan="4" style="color:#6b7280;">insufficient data</td></tr>`;
+    }
+    const cls = r.verdict === 'FAIL' ? 'fail' : 'pass';
+    const limitLabel = r.kind === 'max' ? `≤ ${fmt(r.target)}` : `≥ ${fmt(r.target)}`;
+    const shopCell = r.shopVal === null ? '—' : fmt(r.shopVal);
+    return `<tr>
+      <td>${r.name}</td>
+      <td style="text-align:right;">${fmt(r.measured)} <span style="color:#6b7280;font-weight:400;">±${fmt(r.band)}</span></td>
+      <td style="text-align:right;">${limitLabel}</td>
+      <td style="text-align:right;">${shopCell}</td>
+      <td class="${cls}" style="text-align:right;">${r.verdict}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <b>Performance Assessment (PLD Disengaged, corrected):</b>
+    <table style="margin-top:4px; font-size:11px;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Checkpoint</th>
+          <th style="text-align:right;">Measured ± band</th>
+          <th style="text-align:right;">Rated limit</th>
+          <th style="text-align:right;">Shop curve</th>
+          <th style="text-align:right;">Verdict</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div style="margin-top:6px;">${overall}${shopNote}</div>
+    <div class="legend-note" style="margin-top:4px;">
+      Uncertainty model: band = reading × ${(u.gaugePct * 100).toFixed(1)}% + ${u.gaugePsi.toFixed(1)} PSI (linear worst-case).
+      Flow uncertainty ±${(u.flowPct * 100).toFixed(1)}% is reported for context but not shown as chart shading.
+    </div>
+  `;
+  return { html, overall, rows };
+}
+
+function updateAssessment() {
+  const a = buildAssessment();
+  document.getElementById('assessmentBox').innerHTML = a.html;
+}
+
 function toPoints(arr, opts) {
   const convertFromFt = opts && opts.convertFromFt;
   return arr
@@ -472,7 +712,11 @@ function initChart() {
         { label: 'Rated Curve (Nameplate)', data: [], borderColor: '#111827', backgroundColor: '#111827', borderWidth: 3, borderDash: [8,4], pointRadius: 6, pointStyle: 'rectRot', tension: 0.2 },
         { label: "Mfr Shop Test", data: [], borderColor: '#2563eb', backgroundColor: '#2563eb', borderWidth: 2, pointRadius: 5, pointStyle: 'triangle', tension: 0.3 },
         { label: 'Field Test — PLD Disengaged (corrected to rated RPM)', data: [], borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 5, pointStyle: 'circle', tension: 0.3 },
-        { label: 'Field Test — PLD Engaged (as-measured)', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 }
+        { label: 'Field Test — PLD Engaged (as-measured)', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 },
+        // PLD Disengaged ±accuracy band (upper bound — fills down to the lower)
+        { label: 'PLD Disengaged ±accuracy band', data: [], borderColor: 'rgba(5,150,105,0)', backgroundColor: 'rgba(5,150,105,0.14)', borderWidth: 0, pointRadius: 0, fill: '+1', tension: 0.3, order: 10 },
+        // Lower bound — hidden from legend via filter
+        { label: '_bandLower', data: [], borderColor: 'rgba(5,150,105,0)', backgroundColor: 'rgba(5,150,105,0)', borderWidth: 0, pointRadius: 0, fill: false, tension: 0.3, order: 10 }
       ]
     },
     options: {
@@ -480,7 +724,7 @@ function initChart() {
       maintainAspectRatio: false,
       plugins: {
         title: { display: true, text: 'Fire Pump Performance Curves', font: { size: 16, weight: 'bold' } },
-        legend: { position: 'bottom', labels: { font: { size: 12 }, usePointStyle: true } },
+        legend: { position: 'bottom', labels: { font: { size: 12 }, usePointStyle: true, filter: (item) => !/^_/.test(item.text) } },
         tooltip: { callbacks: { label: c => {
           const isShop = c.datasetIndex === 1 && data.shopUnit === 'ft';
           const psi = c.parsed.y;
@@ -490,10 +734,28 @@ function initChart() {
       },
       scales: {
         x: { type: 'linear', title: { display: true, text: 'Flow (GPM)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true },
-        y: { title: { display: true, text: 'Pressure (PSI)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true }
+        y: { title: { display: true, text: 'Pressure (PSI)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' } }
       }
     }
   });
+}
+
+// Computes a padded Y-axis minimum that skips empty whitespace below the
+// data. Rounds down to a "nice" multiple so gridlines still land on round
+// numbers. Returns 0 if there is nothing to plot.
+function autoYMin() {
+  const ys = [];
+  // Skip the two band datasets (indices 4 and 5) — the lower bound could
+  // drop to 0 and defeat the truncation.
+  chart.data.datasets.forEach((ds, i) => {
+    if (i === 4 || i === 5) return;
+    (ds.data || []).forEach(p => { if (p && typeof p.y === 'number' && !isNaN(p.y)) ys.push(p.y); });
+  });
+  if (ys.length === 0) return 0;
+  const min = Math.min(...ys);
+  // Pad by 8% (or at least 5 PSI), then floor to nearest 10.
+  const padded = min - Math.max(5, min * 0.08);
+  return Math.max(0, Math.floor(padded / 10) * 10);
 }
 
 function redraw() {
@@ -501,8 +763,15 @@ function redraw() {
   chart.data.datasets[1].data = toPoints(data.shop, { convertFromFt: data.shopUnit === 'ft' });
   chart.data.datasets[2].data = pldOffCorrectedPoints();
   chart.data.datasets[3].data = pldOnNetPoints();
+  const band = pldOffBandPoints();
+  chart.data.datasets[4].data = band.upper;
+  chart.data.datasets[5].data = band.lower;
+  const fromZero = document.getElementById('yAxisFromZero')?.checked;
+  chart.options.scales.y.min = fromZero ? 0 : autoYMin();
   chart.update();
   updateNfpaCheck();
+  updateAssessment();
+  scheduleAutosave();
 }
 
 function updateNfpaCheck() {
@@ -617,31 +886,250 @@ function buildPrintReport() {
     .map(([k, v]) => `<div><span class="k">${k}:</span>${v || '—'}</div>`)
     .join('');
 
-  document.getElementById('printNfpa').innerHTML =
-    document.getElementById('nfpaCheck').innerHTML;
+  const assessHtml = document.getElementById('assessmentBox').innerHTML;
+  const nfpaHtml = document.getElementById('nfpaCheck').innerHTML;
+  document.getElementById('printNfpa').innerHTML = assessHtml + '<div style="margin-top:6px;">' + nfpaHtml + '</div>';
 }
 
-let _chartPrintOriginalParent = null;
+function buildPrintDataTables() {
+  const g = id => (document.getElementById(id).value || '').trim();
+  const sub = [g('mfr'), g('model'), g('testDate')].filter(Boolean).join(' · ');
+  document.getElementById('printDataSubtitle').textContent = sub ? ' — ' + sub : '';
+
+  const ratedRpm = parseFloat(document.getElementById('ratedRpm').value);
+  const fmt = v => (v === '' || v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? '—' : v;
+
+  const sections = [];
+
+  sections.push({
+    title: 'Rated Curve (Nameplate)',
+    headers: ['Point', 'GPM', 'PSI'],
+    rows: (data.rated || []).map(pt => [pt.label, fmt(pt.gpm), fmt(pt.psi)])
+  });
+
+  const unitLabel = data.shopUnit === 'ft' ? 'Ft. Head' : 'PSI';
+  const shopRows = (data.shop || [])
+    .filter(pt => pt.gpm !== '' || pt.psi !== '')
+    .map(pt => {
+      const row = [fmt(pt.gpm), fmt(pt.psi)];
+      if (data.shopUnit === 'ft') {
+        const v = parseFloat(pt.psi);
+        row.push(isNaN(v) ? '—' : (v / FT_PER_PSI).toFixed(1));
+      }
+      return row;
+    });
+  sections.push({
+    title: `Manufacturer's Shop Test Curve (entered in ${unitLabel})`,
+    headers: data.shopUnit === 'ft' ? ['GPM', 'Ft. Head', 'Equiv. PSI'] : ['GPM', 'PSI'],
+    rows: shopRows
+  });
+
+  const offRows = (data.pldOff || [])
+    .filter(pt => pt.gpm !== '' || pt.discharge !== '' || pt.suction !== '')
+    .map(pt => {
+      const net = computeNet(pt);
+      const corr = correctPldOffPoint(pt, ratedRpm);
+      return [
+        fmt(pt.gpm), fmt(pt.suction), fmt(pt.discharge), fmt(pt.rpm),
+        net === null ? '—' : net.toFixed(1),
+        corr ? corr.gpm.toFixed(0) : '—',
+        corr ? corr.psi.toFixed(1) : '—'
+      ];
+    });
+  sections.push({
+    title: 'Field Test — PLD Disengaged (corrected to rated RPM via affinity Law 1)',
+    headers: ['GPM', 'Suct PSI', 'Disch PSI', 'RPM', 'Net PSI', 'Corr GPM', 'Corr PSI'],
+    rows: offRows
+  });
+
+  const onRows = (data.pldOn || [])
+    .filter(pt => pt.gpm !== '' || pt.discharge !== '' || pt.suction !== '')
+    .map(pt => {
+      const net = computeNet(pt);
+      return [fmt(pt.gpm), fmt(pt.suction), fmt(pt.discharge), net === null ? '—' : net.toFixed(1)];
+    });
+  sections.push({
+    title: 'Field Test — PLD Engaged (as-measured, not compared to rated/shop curves)',
+    headers: ['GPM', 'Suct PSI', 'Disch PSI', 'Net PSI'],
+    rows: onRows
+  });
+
+  document.getElementById('printDataTables').innerHTML = sections.map(sec => `
+    <h2>${sec.title}</h2>
+    <table>
+      <thead><tr>${sec.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${
+        sec.rows.length
+          ? sec.rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')
+          : `<tr><td colspan="${sec.headers.length}" style="text-align:center;color:#6b7280;">No data entered</td></tr>`
+      }</tbody>
+    </table>
+  `).join('');
+}
+
 function beforePrintHandler() {
   buildPrintReport();
-  const canvas = document.getElementById('chart');
+  buildPrintDataTables();
+  // Render chart as a static image. Using toBase64Image avoids the fragile
+  // "move canvas into print container" approach, which failed because the
+  // print-media grid layout hadn't resolved a pixel height at chart.resize()
+  // time, leaving the canvas drawing at 0×0 on the printed page.
   const slot = document.getElementById('printChartSlot');
-  _chartPrintOriginalParent = canvas.parentNode;
-  slot.appendChild(canvas);
-  if (chart) chart.resize();
-}
-function afterPrintHandler() {
-  const canvas = document.getElementById('chart');
-  if (_chartPrintOriginalParent) {
-    _chartPrintOriginalParent.appendChild(canvas);
-    _chartPrintOriginalParent = null;
+  slot.innerHTML = '';
+  if (chart) {
+    const img = document.createElement('img');
+    img.src = chart.toBase64Image('image/png', 1.0);
+    slot.appendChild(img);
   }
-  if (chart) chart.resize();
 }
 window.addEventListener('beforeprint', beforePrintHandler);
-window.addEventListener('afterprint', afterPrintHandler);
 
 function printChart() { window.print(); }
+
+// ---------- Save / Load (browser localStorage) ----------
+const STORAGE_PREFIX = 'pumpTest:';
+const AUTOSAVE_KEY = STORAGE_PREFIX + '_autosave';
+
+function currentPumpInfo() {
+  return {
+    mfr: document.getElementById('mfr').value,
+    model: document.getElementById('model').value,
+    ratedGpm: document.getElementById('ratedGpm').value,
+    ratedPsi: document.getElementById('ratedPsi').value,
+    ratedRpm: document.getElementById('ratedRpm').value,
+    testDate: document.getElementById('testDate').value,
+    site: document.getElementById('site').value,
+    uncGaugePct: document.getElementById('uncGaugePct').value,
+    uncGaugePsi: document.getElementById('uncGaugePsi').value,
+    uncFlowPct: document.getElementById('uncFlowPct').value
+  };
+}
+
+function applyPumpInfo(pump) {
+  if (!pump) return;
+  Object.keys(pump).forEach(k => {
+    const el = document.getElementById(k);
+    if (el) el.value = pump[k] ?? '';
+  });
+}
+
+function migrateLoadedData() {
+  ['pldOff','pldOn'].forEach(k => {
+    if (!Array.isArray(data[k])) return;
+    data[k] = data[k].map(pt => {
+      if (pt && (pt.discharge !== undefined || pt.suction !== undefined)) return pt;
+      const migrated = { gpm: pt?.gpm ?? '', suction: '', discharge: pt?.psi ?? '' };
+      if (k === 'pldOff') migrated.rpm = '';
+      return migrated;
+    });
+  });
+  if (!data.shopUnit) data.shopUnit = 'psi';
+}
+
+function refreshAllUI() {
+  document.getElementById('shopPressureHeader').textContent = data.shopUnit === 'ft' ? 'Ft. Head' : 'PSI';
+  const radio = document.querySelector(`input[name="shopUnit"][value="${data.shopUnit}"]`);
+  if (radio) radio.checked = true;
+  renderRated();
+  renderTable('shop');
+  renderTable('pldOff');
+  renderTable('pldOn');
+  redraw();
+}
+
+function saveTest() {
+  const pump = currentPumpInfo();
+  const defaultName = [pump.mfr, pump.model, pump.testDate].filter(Boolean).join(' - ') || 'Test';
+  const name = prompt('Save test as:', defaultName);
+  if (!name) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const key = STORAGE_PREFIX + trimmed;
+  if (localStorage.getItem(key) && !confirm(`"${trimmed}" already exists. Overwrite?`)) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ pump, data, savedAt: new Date().toISOString() }));
+    populateLoadMenu(trimmed);
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+function populateLoadMenu(selectName) {
+  const sel = document.getElementById('savedTestsSelect');
+  const current = selectName || sel.value;
+  sel.innerHTML = '<option value="">Load saved test…</option>';
+  const names = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(STORAGE_PREFIX) && k !== AUTOSAVE_KEY) {
+      names.push(k.substring(STORAGE_PREFIX.length));
+    }
+  }
+  names.sort((a, b) => a.localeCompare(b));
+  names.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  });
+  if (current && names.includes(current)) sel.value = current;
+}
+
+function loadSavedTest(name) {
+  if (!name) return;
+  const raw = localStorage.getItem(STORAGE_PREFIX + name);
+  if (!raw) { alert('Saved test not found: ' + name); return; }
+  try {
+    const p = JSON.parse(raw);
+    applyPumpInfo(p.pump);
+    if (p.data) {
+      Object.keys(data).forEach(k => delete data[k]);
+      Object.assign(data, p.data);
+      migrateLoadedData();
+    }
+    refreshAllUI();
+  } catch (e) {
+    alert('Load failed: ' + e.message);
+  }
+}
+
+function deleteSavedTest() {
+  const sel = document.getElementById('savedTestsSelect');
+  const name = sel.value;
+  if (!name) { alert('Pick a saved test from the dropdown first.'); return; }
+  if (!confirm(`Delete saved test "${name}"?`)) return;
+  localStorage.removeItem(STORAGE_PREFIX + name);
+  sel.value = '';
+  populateLoadMenu();
+}
+
+// Debounced autosave so the working state survives page refresh
+let _autosaveTimer;
+function scheduleAutosave() {
+  clearTimeout(_autosaveTimer);
+  _autosaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+        pump: currentPumpInfo(), data, savedAt: new Date().toISOString()
+      }));
+    } catch (e) { /* quota or disabled storage — silently ignore */ }
+  }, 400);
+}
+
+function restoreAutosave() {
+  const raw = localStorage.getItem(AUTOSAVE_KEY);
+  if (!raw) return false;
+  try {
+    const p = JSON.parse(raw);
+    applyPumpInfo(p.pump);
+    if (p.data) {
+      Object.keys(data).forEach(k => delete data[k]);
+      Object.assign(data, p.data);
+      migrateLoadedData();
+    }
+    return true;
+  } catch (e) { return false; }
+}
 
 // Init
 ['ratedGpm','ratedPsi'].forEach(id => {
@@ -653,12 +1141,31 @@ document.getElementById('ratedRpm').addEventListener('input', () => {
   renderTable('pldOff');
   redraw();
 });
+// Pump info fields don't trigger a redraw but should still be autosaved.
+['mfr','model','testDate','site','ratedRpm'].forEach(id => {
+  document.getElementById(id).addEventListener('input', scheduleAutosave);
+});
 
-buildRatedCurve();
+// Uncertainty inputs change the band and the assessment — redraw on edit.
+['uncGaugePct','uncGaugePsi','uncFlowPct'].forEach(id => {
+  document.getElementById(id).addEventListener('input', redraw);
+});
+
+const restored = restoreAutosave();
+if (restored && Array.isArray(data.rated) && data.rated.length > 0) {
+  // Autosave had an explicit rated curve — keep it as stored.
+  document.getElementById('shopPressureHeader').textContent = data.shopUnit === 'ft' ? 'Ft. Head' : 'PSI';
+  const radio = document.querySelector(`input[name="shopUnit"][value="${data.shopUnit}"]`);
+  if (radio) radio.checked = true;
+  renderRated();
+} else {
+  buildRatedCurve();
+}
 renderTable('shop');
 renderTable('pldOff');
 renderTable('pldOn');
 initChart();
+populateLoadMenu();
 redraw();
 </script>
 
