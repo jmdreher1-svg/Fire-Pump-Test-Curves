@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fire Pump Test Curve Plotter</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #f4f5f7;
+    color: #1c1c1e;
+  }
+  header {
+    background: #1f2937;
+    color: #fff;
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 0.3px; }
+  h2 { margin: 0 0 10px; font-size: 15px; color: #1f2937; border-bottom: 2px solid #d1d5db; padding-bottom: 4px; }
+  .layout { display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
+  @media (max-width: 950px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 3px; }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #e5e7eb; padding: 5px; text-align: left; font-weight: 600; }
+  td { padding: 3px; border-bottom: 1px solid #f1f5f9; }
+  td input { padding: 4px 6px; font-size: 12px; }
+  button {
+    background: #1f2937;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary { background: #6b7280; }
+  button.danger { background: #b91c1c; padding: 2px 7px; }
+  button:hover { opacity: 0.9; }
+  .btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .chart-wrap { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; height: 620px; position: sticky; top: 10px; }
+  .nfpa-box { background: #f0f9ff; border-left: 3px solid #0369a1; padding: 8px 10px; font-size: 12px; margin-top: 8px; border-radius: 3px; }
+  .nfpa-box b { color: #0369a1; }
+  .legend-note { font-size: 11px; color: #6b7280; margin-top: 4px; font-style: italic; }
+  details { margin-bottom: 10px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 6px 0; color: #1f2937; }
+  .pass { color: #065f46; font-weight: 700; }
+  .fail { color: #b91c1c; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fire Pump Test Curve Plotter</h1>
+</header>
+
+<div class="layout">
+  <div>
+    <!-- Pump info -->
+    <div class="panel">
+      <h2>Pump Information</h2>
+      <div class="row">
+        <div><label>Manufacturer</label><input type="text" id="mfr" placeholder="e.g., Aurora"></div>
+        <div><label>Model / Serial</label><input type="text" id="model" placeholder="e.g., 481-BF"></div>
+      </div>
+      <div class="row3">
+        <div><label>Rated Flow (GPM)</label><input type="number" id="ratedGpm" value="1000" step="any"></div>
+        <div><label>Rated Pressure (PSI)</label><input type="number" id="ratedPsi" value="125" step="any"></div>
+        <div><label>Rated RPM</label><input type="number" id="ratedRpm" placeholder="e.g., 1760" step="any"></div>
+      </div>
+      <div class="row">
+        <div><label>Test Date</label><input type="text" id="testDate" placeholder="YYYY-MM-DD"></div>
+        <div><label>Location / Site</label><input type="text" id="site"></div>
+      </div>
+      <div class="nfpa-box" id="nfpaCheck">
+        NFPA 20 acceptance: churn ≤ 140% of rated PSI; 150% flow ≥ 65% of rated PSI.
+      </div>
+    </div>
+
+    <!-- Rated curve -->
+    <div class="panel">
+      <h2>Rated Curve (Nameplate)</h2>
+      <div class="legend-note">Auto-generated from rated values. Edit if manufacturer data differs.</div>
+      <table id="ratedTable">
+        <thead><tr><th>Point</th><th>GPM</th><th>PSI</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Shop test -->
+    <details open>
+      <summary>Manufacturer's Shop Test Curve</summary>
+      <div class="panel">
+        <table id="shopTable">
+          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="btn-row">
+          <button onclick="addRow('shop')">+ Add Point</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- PLD disengaged -->
+    <details open>
+      <summary>Field Test — PLD Disengaged</summary>
+      <div class="panel">
+        <table id="pldOffTable">
+          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="btn-row">
+          <button onclick="addRow('pldOff')">+ Add Point</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- PLD engaged -->
+    <details open>
+      <summary>Field Test — PLD Engaged</summary>
+      <div class="panel">
+        <table id="pldOnTable">
+          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="btn-row">
+          <button onclick="addRow('pldOn')">+ Add Point</button>
+        </div>
+      </div>
+    </details>
+
+    <div class="panel">
+      <div class="btn-row">
+        <button onclick="redraw()">Update Chart</button>
+        <button class="secondary" onclick="exportData()">Export JSON</button>
+        <button class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button>
+        <input type="file" id="importFile" style="display:none" accept=".json" onchange="importData(event)">
+        <button class="secondary" onclick="printChart()">Print</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+const data = {
+  rated: [],
+  shop: [
+    { gpm: 0, psi: '' },
+    { gpm: '', psi: '' },
+    { gpm: '', psi: '' },
+    { gpm: '', psi: '' }
+  ],
+  pldOff: [
+    { gpm: 0, psi: '' },
+    { gpm: '', psi: '' },
+    { gpm: '', psi: '' }
+  ],
+  pldOn: [
+    { gpm: 0, psi: '' },
+    { gpm: '', psi: '' },
+    { gpm: '', psi: '' }
+  ]
+};
+
+function buildRatedCurve() {
+  const r = parseFloat(document.getElementById('ratedGpm').value) || 0;
+  const p = parseFloat(document.getElementById('ratedPsi').value) || 0;
+  data.rated = [
+    { label: 'Churn (0%)', gpm: 0, psi: +(p * 1.40).toFixed(1) },
+    { label: 'Rated (100%)', gpm: r, psi: p },
+    { label: 'Overload (150%)', gpm: +(r * 1.5).toFixed(0), psi: +(p * 0.65).toFixed(1) }
+  ];
+  renderRated();
+}
+
+function renderRated() {
+  const tb = document.querySelector('#ratedTable tbody');
+  tb.innerHTML = '';
+  data.rated.forEach((pt, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${pt.label}</td>
+      <td><input type="number" value="${pt.gpm}" step="any" onchange="data.rated[${i}].gpm=parseFloat(this.value);redraw()"></td>
+      <td><input type="number" value="${pt.psi}" step="any" onchange="data.rated[${i}].psi=parseFloat(this.value);redraw()"></td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function renderTable(key) {
+  const id = { shop: 'shopTable', pldOff: 'pldOffTable', pldOn: 'pldOnTable' }[key];
+  const tb = document.querySelector('#' + id + ' tbody');
+  tb.innerHTML = '';
+  data[key].forEach((pt, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" value="${pt.gpm}" step="any" onchange="data['${key}'][${i}].gpm=parseFloat(this.value);redraw()"></td>
+      <td><input type="number" value="${pt.psi}" step="any" onchange="data['${key}'][${i}].psi=parseFloat(this.value);redraw()"></td>
+      <td><button class="danger" onclick="removeRow('${key}',${i})">×</button></td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function addRow(key) {
+  data[key].push({ gpm: '', psi: '' });
+  renderTable(key);
+}
+
+function removeRow(key, i) {
+  data[key].splice(i, 1);
+  renderTable(key);
+  redraw();
+}
+
+function toPoints(arr) {
+  return arr
+    .filter(p => p.gpm !== '' && p.psi !== '' && !isNaN(parseFloat(p.gpm)) && !isNaN(parseFloat(p.psi)))
+    .map(p => ({ x: parseFloat(p.gpm), y: parseFloat(p.psi) }))
+    .sort((a, b) => a.x - b.x);
+}
+
+let chart;
+function initChart() {
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Rated Curve (Nameplate)', data: [], borderColor: '#111827', backgroundColor: '#111827', borderWidth: 3, borderDash: [8,4], pointRadius: 6, pointStyle: 'rectRot', tension: 0.2 },
+        { label: "Mfr Shop Test", data: [], borderColor: '#2563eb', backgroundColor: '#2563eb', borderWidth: 2, pointRadius: 5, pointStyle: 'triangle', tension: 0.3 },
+        { label: 'Field Test — PLD Disengaged', data: [], borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 5, pointStyle: 'circle', tension: 0.3 },
+        { label: 'Field Test — PLD Engaged', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: { display: true, text: 'Fire Pump Performance Curves', font: { size: 16, weight: 'bold' } },
+        legend: { position: 'bottom', labels: { font: { size: 12 }, usePointStyle: true } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.x} GPM @ ${c.parsed.y} PSI` } }
+      },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Flow (GPM)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true },
+        y: { title: { display: true, text: 'Pressure (PSI)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function redraw() {
+  chart.data.datasets[0].data = toPoints(data.rated);
+  chart.data.datasets[1].data = toPoints(data.shop);
+  chart.data.datasets[2].data = toPoints(data.pldOff);
+  chart.data.datasets[3].data = toPoints(data.pldOn);
+  chart.update();
+  updateNfpaCheck();
+}
+
+function updateNfpaCheck() {
+  const ratedPsi = parseFloat(document.getElementById('ratedPsi').value) || 0;
+  const ratedGpm = parseFloat(document.getElementById('ratedGpm').value) || 0;
+  if (!ratedPsi || !ratedGpm) return;
+
+  const off = toPoints(data.pldOff);
+  if (off.length < 2) {
+    document.getElementById('nfpaCheck').innerHTML = 'NFPA 20 acceptance: churn ≤ 140% of rated PSI; 150% flow ≥ 65% of rated PSI.';
+    return;
+  }
+
+  const churn = off[0];
+  const churnLimit = ratedPsi * 1.40;
+  const overloadLimit = ratedPsi * 0.65;
+  const overloadTarget = ratedGpm * 1.5;
+  const closest = off.reduce((a, b) => Math.abs(b.x - overloadTarget) < Math.abs(a.x - overloadTarget) ? b : a);
+
+  const churnPass = churn.y <= churnLimit;
+  const overloadPass = closest.y >= overloadLimit;
+
+  document.getElementById('nfpaCheck').innerHTML = `
+    <b>NFPA 20 Field Test Check (PLD Disengaged):</b><br>
+    Churn: ${churn.y.toFixed(1)} PSI (limit ≤ ${churnLimit.toFixed(1)}) <span class="${churnPass?'pass':'fail'}">${churnPass?'PASS':'FAIL'}</span><br>
+    At ~${closest.x} GPM: ${closest.y.toFixed(1)} PSI (min ${overloadLimit.toFixed(1)} at 150%) <span class="${overloadPass?'pass':'fail'}">${overloadPass?'PASS':'REVIEW'}</span>
+  `;
+}
+
+function exportData() {
+  const out = {
+    pump: {
+      mfr: document.getElementById('mfr').value,
+      model: document.getElementById('model').value,
+      ratedGpm: document.getElementById('ratedGpm').value,
+      ratedPsi: document.getElementById('ratedPsi').value,
+      ratedRpm: document.getElementById('ratedRpm').value,
+      testDate: document.getElementById('testDate').value,
+      site: document.getElementById('site').value
+    },
+    data
+  };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pump_test_' + (document.getElementById('testDate').value || 'data') + '.json';
+  a.click();
+}
+
+function importData(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if (parsed.pump) {
+        Object.keys(parsed.pump).forEach(k => {
+          const el = document.getElementById(k);
+          if (el) el.value = parsed.pump[k];
+        });
+      }
+      if (parsed.data) {
+        Object.assign(data, parsed.data);
+      }
+      renderRated();
+      renderTable('shop');
+      renderTable('pldOff');
+      renderTable('pldOn');
+      redraw();
+    } catch (err) { alert('Invalid file: ' + err.message); }
+  };
+  r.readAsText(f);
+}
+
+function printChart() { window.print(); }
+
+// Init
+['ratedGpm','ratedPsi'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { buildRatedCurve(); redraw(); });
+});
+
+buildRatedCurve();
+renderTable('shop');
+renderTable('pldOff');
+renderTable('pldOn');
+initChart();
+redraw();
+</script>
+
+</body>
+</html>
