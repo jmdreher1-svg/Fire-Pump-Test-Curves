@@ -76,28 +76,27 @@
   #pldOnTable th, #pldOnTable td { padding: 3px 4px; font-size: 12px; }
   .table-scroll { overflow-x: auto; }
 
-  /* Print report — single-page landscape letter */
-  .print-report { display: none; }
+  /* Print: page 1 cover, page 2 detail (assessment + data tables) */
+  .print-cover, .print-detail { display: none; }
   @media print {
     @page { size: letter landscape; margin: 0.4in; }
     html, body {
       background: #fff !important;
       margin: 0 !important;
       padding: 0 !important;
+      color: #000;
     }
     body > header,
     body > .layout { display: none !important; }
-    .print-report {
-      display: grid !important;
-      grid-template-rows: auto auto 1fr auto;
-      gap: 8px;
-      width: 100%;
-      height: 7.3in; /* 8.5x11 landscape minus margins */
-      color: #000;
+    .no-print { display: none !important; }
+
+    /* ----- Page 1: Cover ----- */
+    .print-cover {
+      display: block !important;
       font-size: 10pt;
     }
-    .print-report h1 {
-      margin: 0;
+    .print-cover h1 {
+      margin: 0 0 6px;
       font-size: 16pt;
       border-bottom: 2px solid #000;
       padding-bottom: 4px;
@@ -105,70 +104,79 @@
     .print-meta {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 4px 16px;
-      font-size: 10pt;
+      gap: 2px 16px;
+      font-size: 9.5pt;
+      margin-bottom: 8px;
     }
     .print-meta div { border-bottom: 1px solid #d1d5db; padding: 2px 0; }
     .print-meta span.k { font-weight: 600; color: #374151; margin-right: 6px; }
+
     .print-chart {
-      position: relative;
       width: 100%;
-      height: 5in;
-      overflow: hidden;
+      text-align: center;
+      margin: 0 0 8px;
+      page-break-inside: avoid;
     }
     .print-chart img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
       display: block;
+      width: 100%;
+      max-height: 5.7in;
+      height: auto;
+      margin: 0 auto;
     }
-    .print-nfpa {
-      border: 1px solid #000;
-      padding: 6px 10px;
-      font-size: 9.5pt;
-      background: #f0f9ff;
+    .print-verdict {
+      border: 1px solid #047857;
+      border-left: 4px solid #047857;
+      background: #f0fdf4;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      padding: 8px 12px;
+      font-size: 10pt;
+      page-break-inside: avoid;
     }
-    .print-nfpa b { color: #000; }
-    .no-print { display: none !important; }
+    .print-verdict b { color: #065f46; }
+    .print-verdict .pass { color: #065f46; font-weight: 700; }
+    .print-verdict .fail { color: #b91c1c; font-weight: 700; }
 
-    /* Second page: data tables */
-    .print-data-page {
+    /* ----- Page 2: Detail ----- */
+    .print-detail {
       display: block !important;
       page-break-before: always;
-      color: #000;
-      font-size: 10pt;
-    }
-    .print-data-page h1 {
-      font-size: 16pt;
-      margin: 0 0 8px;
-      border-bottom: 2px solid #000;
-      padding-bottom: 4px;
-    }
-    .print-data-page h2 {
-      font-size: 11pt;
-      margin: 10px 0 4px;
-      color: #1f2937;
-    }
-    .print-data-page table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 10px;
       font-size: 9.5pt;
     }
-    .print-data-page th, .print-data-page td {
+    .print-detail h1 {
+      font-size: 14pt;
+      margin: 0 0 6px;
+      border-bottom: 2px solid #000;
+      padding-bottom: 3px;
+    }
+    .print-detail h2 {
+      font-size: 11pt;
+      margin: 10px 0 3px;
+      color: #1f2937;
+    }
+    .print-detail table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+      font-size: 9pt;
+      page-break-inside: avoid;
+    }
+    .print-detail th, .print-detail td {
       border: 1px solid #666;
-      padding: 3px 6px;
+      padding: 2px 5px;
       text-align: right;
     }
-    .print-data-page th {
+    .print-detail th {
       background: #e5e7eb !important;
       text-align: center;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .print-data-page td:first-child, .print-data-page th:first-child { text-align: left; }
+    .print-detail td:first-child, .print-detail th:first-child { text-align: left; }
+    .print-detail .pass { color: #065f46; font-weight: 700; }
+    .print-detail .fail { color: #b91c1c; font-weight: 700; }
   }
-  .print-data-page { display: none; }
 </style>
 </head>
 <body>
@@ -344,15 +352,16 @@
   </div>
 </div>
 
-<!-- Print-only: page 1 = landscape report with chart; page 2 = raw data tables -->
-<div class="print-report" id="printReport">
+<!-- Print-only: page 1 = cover (chart), page 2 = full assessment + data tables -->
+<div class="print-cover" id="printReport">
   <h1 id="printTitle">Fire Pump Performance Test Report</h1>
   <div class="print-meta" id="printMeta"></div>
   <div class="print-chart" id="printChartSlot"></div>
-  <div class="print-nfpa" id="printNfpa"></div>
+  <div class="print-verdict" id="printVerdict"></div>
 </div>
-<div class="print-data-page" id="printDataPage">
-  <h1>Test Data<span id="printDataSubtitle" style="font-size: 12pt; font-weight: 400; color: #374151;"></span></h1>
+<div class="print-detail" id="printDataPage">
+  <h1>Performance Assessment &amp; Test Data<span id="printDataSubtitle" style="font-size: 12pt; font-weight: 400; color: #374151;"></span></h1>
+  <div id="printAssessmentBlock"></div>
   <div id="printDataTables"></div>
 </div>
 
@@ -952,10 +961,9 @@ function buildPrintReport() {
   document.getElementById('printMeta').innerHTML = fields
     .map(([k, v]) => `<div><span class="k">${k}:</span>${v || '—'}</div>`)
     .join('');
-
-  const assessHtml = document.getElementById('assessmentBox').innerHTML;
-  const nfpaHtml = document.getElementById('nfpaCheck').innerHTML;
-  document.getElementById('printNfpa').innerHTML = assessHtml + '<div style="margin-top:6px;">' + nfpaHtml + '</div>';
+  // The verdict (page 1) and full assessment block (page 2) are populated
+  // by beforePrintHandler, which calls buildAssessment() once and reuses
+  // the result for both. Nothing else to do here.
 }
 
 function buildPrintDataTables() {
@@ -1034,22 +1042,67 @@ function buildPrintDataTables() {
   `).join('');
 }
 
+function captureChartImage() {
+  if (!chart) return null;
+  // Temporarily resize the chart to print-friendly pixel dimensions so the
+  // captured PNG is crisp. Restore the on-screen size in a finally block so
+  // the live chart isn't left distorted if anything throws.
+  const origW = chart.width;
+  const origH = chart.height;
+  let dataUrl = null;
+  try {
+    chart.resize(2000, 1100);
+    chart.update('none');
+    dataUrl = chart.canvas.toDataURL('image/png', 1.0);
+  } catch (e) {
+    console.error('Chart capture failed:', e);
+  } finally {
+    try { chart.resize(origW, origH); chart.update('none'); } catch (_) {}
+  }
+  return dataUrl;
+}
+
 function beforePrintHandler() {
+  // Build the printable DOM bits before the browser snapshots the page.
   buildPrintReport();
   buildPrintDataTables();
-  // Render chart as a static image. Using toBase64Image avoids the fragile
-  // "move canvas into print container" approach, which failed because the
-  // print-media grid layout hadn't resolved a pixel height at chart.resize()
-  // time, leaving the canvas drawing at 0×0 on the printed page.
+
+  // ----- Page 1 chart capture -----
   const slot = document.getElementById('printChartSlot');
   slot.innerHTML = '';
-  if (chart) {
+  const dataUrl = captureChartImage();
+  if (dataUrl) {
     const img = document.createElement('img');
-    img.src = chart.toBase64Image('image/png', 1.0);
+    img.src = dataUrl;
+    img.alt = 'Pump performance chart';
     slot.appendChild(img);
+  } else {
+    slot.textContent = 'Chart unavailable.';
+  }
+
+  // ----- Page 1 one-line verdict -----
+  const a = buildAssessment();
+  const verdict = document.getElementById('printVerdict');
+  if (a && a.overall) {
+    verdict.innerHTML = '<b>Overall Verdict:</b> ' + a.overall;
+  } else {
+    verdict.innerHTML = a && a.html ? a.html : 'Insufficient data for verdict.';
+  }
+
+  // ----- Page 2 full assessment block -----
+  const block = document.getElementById('printAssessmentBlock');
+  if (a && a.html) {
+    block.innerHTML = a.html;
+  } else {
+    block.innerHTML = '';
   }
 }
 window.addEventListener('beforeprint', beforePrintHandler);
+window.addEventListener('afterprint', () => {
+  // Re-fit the live chart to its container after the print dialog closes,
+  // in case the snapshot resize left it at print dimensions.
+  if (chart) { try { chart.resize(); } catch (_) {} }
+});
 
 function printChart() { window.print(); }
 
