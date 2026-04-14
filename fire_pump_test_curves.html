@@ -114,8 +114,18 @@
     <details open>
       <summary>Manufacturer's Shop Test Curve</summary>
       <div class="panel">
+        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px;">
+          <label style="margin-bottom: 0;">Input Units:</label>
+          <label style="display: inline-flex; align-items: center; gap: 4px; font-weight: 400;">
+            <input type="radio" name="shopUnit" value="psi" checked onchange="setShopUnit('psi')"> PSI
+          </label>
+          <label style="display: inline-flex; align-items: center; gap: 4px; font-weight: 400;">
+            <input type="radio" name="shopUnit" value="ft" onchange="setShopUnit('ft')"> Ft. Head
+          </label>
+          <span class="legend-note" style="margin-top: 0;">Chart always plots in PSI</span>
+        </div>
         <table id="shopTable">
-          <thead><tr><th>GPM</th><th>PSI</th><th></th></tr></thead>
+          <thead><tr><th>GPM</th><th id="shopPressureHeader">PSI</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="btn-row">
@@ -169,8 +179,12 @@
 </div>
 
 <script>
+// Conversion factor: 1 PSI = 2.31 ft of water head
+const FT_PER_PSI = 2.31;
+
 const data = {
   rated: [],
+  shopUnit: 'psi', // 'psi' or 'ft' — unit of the values stored in data.shop[].psi
   shop: [
     { gpm: 0, psi: '' },
     { gpm: '', psi: '' },
@@ -240,11 +254,36 @@ function removeRow(key, i) {
   redraw();
 }
 
-function toPoints(arr) {
+function toPoints(arr, opts) {
+  const convertFromFt = opts && opts.convertFromFt;
   return arr
     .filter(p => p.gpm !== '' && p.psi !== '' && !isNaN(parseFloat(p.gpm)) && !isNaN(parseFloat(p.psi)))
-    .map(p => ({ x: parseFloat(p.gpm), y: parseFloat(p.psi) }))
+    .map(p => {
+      const raw = parseFloat(p.psi);
+      const y = convertFromFt ? raw / FT_PER_PSI : raw;
+      return { x: parseFloat(p.gpm), y: y };
+    })
     .sort((a, b) => a.x - b.x);
+}
+
+function setShopUnit(unit) {
+  if (unit === data.shopUnit) return;
+  // Convert existing entered values so they represent the same physical pressure
+  data.shop.forEach(pt => {
+    if (pt.psi === '' || isNaN(parseFloat(pt.psi))) return;
+    const v = parseFloat(pt.psi);
+    if (unit === 'ft' && data.shopUnit === 'psi') {
+      pt.psi = +(v * FT_PER_PSI).toFixed(2);
+    } else if (unit === 'psi' && data.shopUnit === 'ft') {
+      pt.psi = +(v / FT_PER_PSI).toFixed(2);
+    }
+  });
+  data.shopUnit = unit;
+  document.getElementById('shopPressureHeader').textContent = unit === 'ft' ? 'Ft. Head' : 'PSI';
+  const radio = document.querySelector(`input[name="shopUnit"][value="${unit}"]`);
+  if (radio) radio.checked = true;
+  renderTable('shop');
+  redraw();
 }
 
 let chart;
@@ -266,7 +305,12 @@ function initChart() {
       plugins: {
         title: { display: true, text: 'Fire Pump Performance Curves', font: { size: 16, weight: 'bold' } },
         legend: { position: 'bottom', labels: { font: { size: 12 }, usePointStyle: true } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.x} GPM @ ${c.parsed.y} PSI` } }
+        tooltip: { callbacks: { label: c => {
+          const isShop = c.datasetIndex === 1 && data.shopUnit === 'ft';
+          const psi = c.parsed.y;
+          const base = `${c.dataset.label}: ${c.parsed.x} GPM @ ${psi.toFixed(1)} PSI`;
+          return isShop ? `${base} (${(psi * FT_PER_PSI).toFixed(1)} ft head)` : base;
+        } } }
       },
       scales: {
         x: { type: 'linear', title: { display: true, text: 'Flow (GPM)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true },
@@ -278,7 +322,7 @@ function initChart() {
 
 function redraw() {
   chart.data.datasets[0].data = toPoints(data.rated);
-  chart.data.datasets[1].data = toPoints(data.shop);
+  chart.data.datasets[1].data = toPoints(data.shop, { convertFromFt: data.shopUnit === 'ft' });
   chart.data.datasets[2].data = toPoints(data.pldOff);
   chart.data.datasets[3].data = toPoints(data.pldOn);
   chart.update();
@@ -348,6 +392,10 @@ function importData(e) {
       if (parsed.data) {
         Object.assign(data, parsed.data);
       }
+      if (!data.shopUnit) data.shopUnit = 'psi';
+      document.getElementById('shopPressureHeader').textContent = data.shopUnit === 'ft' ? 'Ft. Head' : 'PSI';
+      const radio = document.querySelector(`input[name="shopUnit"][value="${data.shopUnit}"]`);
+      if (radio) radio.checked = true;
       renderRated();
       renderTable('shop');
       renderTable('pldOff');
