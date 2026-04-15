@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fire Pump Test Curve Plotter</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -326,6 +327,7 @@
         </select>
         <button class="danger" style="padding: 6px 10px;" onclick="deleteSavedTest()">Delete</button>
         <button class="secondary" onclick="printChart()">Print / PDF (Landscape)</button>
+        <button class="secondary" onclick="exportWord()">Export Word (.docx)</button>
       </div>
       <div class="btn-row" style="margin-top: 6px;">
         <button class="secondary" onclick="exportData()">Export JSON</button>
@@ -718,7 +720,7 @@ function initChart() {
         { label: 'Rated Curve (Nameplate)', data: [], borderColor: '#111827', backgroundColor: '#111827', borderWidth: 3, borderDash: [8,4], pointRadius: 6, pointStyle: 'rectRot', tension: 0.2 },
         { label: "Mfr Shop Test", data: [], borderColor: '#2563eb', backgroundColor: '#2563eb', borderWidth: 2, pointRadius: 5, pointStyle: 'triangle', tension: 0.3 },
         { label: 'Field Test — PLD Disengaged (corrected to rated RPM)', data: [], borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 5, pointStyle: 'circle', tension: 0.3 },
-        { label: 'Field Test — PLD Engaged (as-measured)', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0.3 },
+        { label: 'Field Test — PLD Engaged (as-measured)', data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2.5, pointRadius: 5, pointStyle: 'rect', tension: 0 },
         // 5% downward margin (NFPA degradation allowance + gauge/reading error).
         // Data is the PLD Disengaged curve shifted down by margin%; fill: 2
         // shades the strip between this line and the PLD Disengaged curve.
@@ -1036,6 +1038,145 @@ window.addEventListener('afterprint', () => {
 });
 
 function printChart() { window.print(); }
+
+// ---------- Word (.docx) export ----------
+// Reuses the same content as the printed PDF: cover page with title, meta
+// grid, chart image, and overall verdict; detail page with full performance
+// assessment and all raw data tables. The document HTML is converted to a
+// real OOXML .docx via html-docx-js when available; otherwise we fall back
+// to Word-compatible HTML saved with a .doc extension (Word still opens it
+// as an editable landscape document because of the mso-page-orientation hint).
+function buildReportHtml() {
+  const pump = currentPumpInfo();
+  const chartDataUrl = captureChartImage();
+  const a = buildAssessment();
+  // buildPrintDataTables writes to #printDataTables; reuse its output so the
+  // Word export is byte-identical to the PDF's data tables section.
+  buildPrintDataTables();
+  const tablesHtml = document.getElementById('printDataTables').innerHTML;
+
+  const titleBits = [pump.mfr, pump.model].filter(Boolean).join(' ');
+  const title = 'Fire Pump Performance Test Report' + (titleBits ? ' — ' + titleBits : '');
+  const subtitle = [pump.mfr, pump.model, pump.testDate].filter(Boolean).join(' · ');
+
+  const cell = (k, v) => `<td style="border:0;padding:2px 8px;"><b>${k}:</b> ${v || '—'}</td>`;
+  const metaHtml = `
+    <table style="border:0;width:100%;margin-bottom:8px;font-size:9.5pt;">
+      <tr>
+        ${cell('Manufacturer', pump.mfr)}
+        ${cell('Model / Serial', pump.model)}
+        ${cell('Test Date', pump.testDate)}
+        ${cell('Location / Site', pump.site)}
+      </tr>
+      <tr>
+        ${cell('Rated Flow', pump.ratedGpm ? pump.ratedGpm + ' GPM' : '')}
+        ${cell('Rated Pressure', pump.ratedPsi ? pump.ratedPsi + ' PSI' : '')}
+        ${cell('Rated RPM', pump.ratedRpm)}
+        ${cell('Shop Curve Entry', data.shopUnit === 'ft' ? 'Ft. Head (plotted as PSI)' : 'PSI')}
+      </tr>
+    </table>`;
+
+  const chartHtml = chartDataUrl
+    ? `<p style="text-align:center;margin:0 0 8px;"><img src="${chartDataUrl}" style="width:100%;max-width:10in;" /></p>`
+    : '<p><i>Chart unavailable.</i></p>';
+
+  const verdictText = a && a.overall ? a.overall : (a && a.html ? a.html : 'Insufficient data for verdict.');
+  const verdictHtml = `
+    <div style="border:1px solid #047857;border-left:4px solid #047857;background:#f0fdf4;
+                padding:8px 12px;margin-top:8px;font-size:10.5pt;">
+      <b style="color:#065f46;">Overall Verdict:</b> ${verdictText}
+    </div>`;
+
+  const assessmentHtml = a && a.html ? a.html : '';
+
+  // Word HTML requires xmlns attrs + mso-page-orientation for landscape.
+  return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<!--[if gte mso 9]><xml>
+  <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml><![endif]-->
+<style>
+  @page {
+    size: 11.0in 8.5in;
+    mso-page-orientation: landscape;
+    margin: 0.5in 0.5in 0.5in 0.5in;
+  }
+  body { font-family: Calibri, Arial, sans-serif; font-size: 10pt; color: #000; }
+  h1 { font-size: 16pt; border-bottom: 2px solid #000; padding-bottom: 4px; margin: 0 0 6px; }
+  h2 { font-size: 12pt; margin: 10px 0 3px; color: #1f2937; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin-bottom: 8px; }
+  th, td { border: 1px solid #666; padding: 3px 6px; text-align: right; }
+  th { background: #e5e7eb; text-align: center; }
+  td:first-child, th:first-child { text-align: left; }
+  .pass { color: #065f46; font-weight: bold; }
+  .fail { color: #b91c1c; font-weight: bold; }
+  .pageBreak { page-break-before: always; mso-special-character: line-break; }
+</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${metaHtml}
+  ${chartHtml}
+  ${verdictHtml}
+
+  <br clear="all" class="pageBreak" />
+
+  <h1>Performance Assessment &amp; Test Data${subtitle ? ' — ' + subtitle : ''}</h1>
+  ${assessmentHtml}
+  ${tablesHtml}
+</body>
+</html>`;
+}
+
+function _downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 1000);
+}
+
+function exportWord() {
+  const pump = currentPumpInfo();
+  const baseName = 'pump_report_' + (pump.testDate || 'data');
+
+  let html;
+  try {
+    html = buildReportHtml();
+  } catch (e) {
+    alert('Could not build report: ' + e.message);
+    return;
+  }
+
+  // Preferred path: real .docx via html-docx-js.
+  if (typeof htmlDocx !== 'undefined' && typeof htmlDocx.asBlob === 'function') {
+    try {
+      const blob = htmlDocx.asBlob(html, { orientation: 'landscape', margins: { top: 720, right: 720, bottom: 720, left: 720 } });
+      _downloadBlob(blob, baseName + '.docx');
+      return;
+    } catch (e) {
+      console.warn('html-docx-js failed; falling back to Word HTML (.doc):', e);
+    }
+  }
+
+  // Fallback: Word-compatible HTML. Word opens this as an editable landscape
+  // document because of the mso-page-orientation hint in @page.
+  const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+  _downloadBlob(blob, baseName + '.doc');
+}
 
 // ---------- Save / Load (browser localStorage) ----------
 const STORAGE_PREFIX = 'pumpTest:';
