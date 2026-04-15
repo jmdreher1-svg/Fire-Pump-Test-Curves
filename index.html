@@ -739,8 +739,12 @@ function initChart() {
         } } }
       },
       scales: {
-        x: { type: 'linear', title: { display: true, text: 'Flow (GPM)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' }, beginAtZero: true },
-        y: { title: { display: true, text: 'Pressure (PSI)', font: { size: 13, weight: 'bold' } }, grid: { color: '#e5e7eb' } }
+        x: { type: 'linear', title: { display: true, text: 'Flow (GPM)', font: { size: 13, weight: 'bold' } }, grid: { color: '#9ca3af', lineWidth: 1 }, beginAtZero: true },
+        y: {
+          title: { display: true, text: 'Pressure (PSI)', font: { size: 13, weight: 'bold' } },
+          grid: { color: '#9ca3af', lineWidth: 1 },
+          ticks: { stepSize: 10 }
+        }
       }
     }
   });
